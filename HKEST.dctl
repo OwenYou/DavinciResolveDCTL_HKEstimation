@@ -1,0 +1,181 @@
+//Helmholtz–Kohlrausch Effect Estimation Ver.01
+//2021-08-10 22:30
+//By HikariDragon
+
+//reference & related links:
+//《三十分钟色彩科学——H-K Effect》https://mp.weixin.qq.com/s/tijupkFTtZLBP0kqewAO4Q 
+//Simple Estimation Methods for the Helmholtz–Kohlrausch Effect https://doi.org/10.1002/(SICI)1520-6378(199712)22:6<385::AID-COL6>3.0.CO;2-R
+//Open Display Transform https://github.com/jedypod/open-display-transform
+
+
+__CONSTANT__ float _check=0.001f;
+__CONSTANT__ float _e=0.00885645f;
+__CONSTANT__ float _k=903.2962963;
+__CONSTANT__ float pi=3.141592653589f;
+
+typedef struct
+{
+float c00, c01, c02,
+        c10, c11, c12,
+        c20, c21, c22;
+} Matrix;
+
+//ACES AP0 to XYZ matrix
+__CONSTANT__ Matrix mtxap0xyz = 
+{0.9525523959f, 0.0f, 0.0000936786f, 
+0.3439664498f, 0.7281660966f, -0.0721325464f, 
+0.0f, 0.0f, 1.0088251844f};
+
+//XYZ to ACES AP0 matrix
+__CONSTANT__ Matrix mtxxyzap0 =
+{1.0498110175f, 0.0f, -0.0000974845f,
+-0.4959030231f, 1.3733130458f, 0.0982400361f,
+0.0f, 0.0f, 0.9912520182f};
+
+
+DEFINE_UI_PARAMS(algOpt, H-K Est. Algorithm, DCTLUI_COMBO_BOX, 1, { LVAC, LVCC, OVAC, OVCC }, { Luminous VAC, Luminous VCC, Object VAC, Object VCC })
+DEFINE_UI_PARAMS(La, La Value, DCTLUI_SLIDER_FLOAT, 10, 0, 2000, 10)
+
+__DEVICE__ float3 matMulVec(Matrix matrixIn,float3 vectorIn){
+
+    float resX;
+    float resY;
+    float resZ;
+    resX = matrixIn.c00 * vectorIn.x + matrixIn.c01 * vectorIn.y + matrixIn.c02 * vectorIn.z;
+    resY = matrixIn.c10 * vectorIn.x + matrixIn.c11 * vectorIn.y + matrixIn.c12 * vectorIn.z;
+    resZ = matrixIn.c20 * vectorIn.x + matrixIn.c21 * vectorIn.y + matrixIn.c22 * vectorIn.z;
+    
+    return make_float3(resX,resY,resZ);
+    }
+
+__DEVICE__ float3 hkest_lumVAC(float3 inputLuvPixelVal,float La)
+{
+
+    float h,th,q,k_br,s_uv;
+    float2 w_uv;
+    w_uv=make_float2(0.19783001f,0.46831999f);
+    k_br=0.2717f*(6.469f+6.362f*_powf(La,0.4495f))/(6.469f+_powf(La,0.4495f));
+
+    h=_atan2f(inputLuvPixelVal.z-w_uv.y,inputLuvPixelVal.y-w_uv.x);
+    th=h<0?h+(2.0f*pi):h;
+    q=-0.01585f-0.03017f*_cosf(th)-0.04556f*_cosf(2.0f*th)-0.02667f*_cosf(3.0f*th)-0.00295f*_cosf(4.0f*th)+0.14592f*_sinf(th)+0.05084f*_sinf(2.0f*th)-0.019f*_sinf(3.0f*th)-0.00764f*_sinf(4.0f*th);
+    s_uv=13.0f*_hypotf(inputLuvPixelVal.y-w_uv.x,inputLuvPixelVal.z-w_uv.y);
+    inputLuvPixelVal.x=0.4462f*_powf(1.0f +(-0.1340f*q+0.0872f*k_br)*s_uv + 0.3086f, 3.0f);
+    inputLuvPixelVal.y=inputLuvPixelVal.z=inputLuvPixelVal.x;
+
+    return inputLuvPixelVal;
+}
+
+__DEVICE__ float3 hkest_lumVCC(float3 inputLuvPixelVal,float La)
+{
+
+    float h,th,q,k_br,s_uv;
+    float2 w_uv;
+    w_uv=make_float2(0.19783001f,0.46831999f);
+    k_br=0.2717f*(6.469f+6.362f*_powf(La,0.4495f))/(6.469f+_powf(La,0.4495f));
+
+    h=_atan2f(inputLuvPixelVal.z-w_uv.y,inputLuvPixelVal.y-w_uv.x);
+    th=h<0?h+(2.0f*pi):h;
+    q=-0.01585f-0.03017f*_cosf(th)-0.04556f*_cosf(2.0f*th)-0.02667f*_cosf(3.0f*th)-0.00295f*_cosf(4.0f*th)+0.14592f*_sinf(th)+0.05084f*_sinf(2.0f*th)-0.019f*_sinf(3.0f*th)-0.00764f*_sinf(4.0f*th);
+    s_uv=13.0f*_hypotf(inputLuvPixelVal.y-w_uv.x,inputLuvPixelVal.z-w_uv.y);
+    inputLuvPixelVal.x=0.4462f*_powf(1.0f +(-0.8660f*q+0.0872f*k_br)*s_uv + 0.3086f, 3.0f);
+    inputLuvPixelVal.y=inputLuvPixelVal.z=inputLuvPixelVal.x;
+
+    return inputLuvPixelVal;
+}
+
+__DEVICE__ float3 hkest_objVAC(float3 inputLuvPixelVal,float La)
+{
+
+    float h,th,q,k_br,s_uv;
+    float2 w_uv;
+    w_uv=make_float2(0.19783001f,0.46831999f);
+    k_br=0.2717f*(6.469f+6.362f*_powf(La,0.4495f))/(6.469f+_powf(La,0.4495f));
+
+    h=_atan2f(inputLuvPixelVal.z-w_uv.y,inputLuvPixelVal.y-w_uv.x);
+    th=h<0?h+(2.0f*pi):h;
+    q=-0.01585f-0.03017f*_cosf(th)-0.04556f*_cosf(2.0f*th)-0.02667f*_cosf(3.0f*th)-0.00295f*_cosf(4.0f*th)+0.14592f*_sinf(th)+0.05084f*_sinf(2.0f*th)-0.019f*_sinf(3.0f*th)-0.00764f*_sinf(4.0f*th);
+    s_uv=13.0f*_hypotf(inputLuvPixelVal.y-w_uv.x,inputLuvPixelVal.z-w_uv.y);
+    inputLuvPixelVal.x=1+(-0.1340f*q+0.0872f*k_br)*s_uv;
+    inputLuvPixelVal.y=inputLuvPixelVal.z=inputLuvPixelVal.x;
+
+    return inputLuvPixelVal;
+}
+
+__DEVICE__ float3 hkest_objVCC(float3 inputLuvPixelVal,float La)
+{
+    float h,th,q,k_br,s_uv;
+    float2 w_uv;
+    w_uv=make_float2(0.19783001f,0.46831999f);
+    k_br=0.2717f*(6.469f+6.362f*_powf(La,0.4495f))/(6.469f+_powf(La,0.4495f));
+
+    h=_atan2f(inputLuvPixelVal.z-w_uv.y,inputLuvPixelVal.y-w_uv.x);
+    th=h<0?h+(2.0f*pi):h;
+    q=-0.01585f-0.03017f*_cosf(th)-0.04556f*_cosf(2.0f*th)-0.02667f*_cosf(3.0f*th)-0.00295f*_cosf(4.0f*th)+0.14592f*_sinf(th)+0.05084f*_sinf(2.0f*th)-0.019f*_sinf(3.0f*th)-0.00764f*_sinf(4.0f*th);
+    s_uv=13.0f*_hypotf(inputLuvPixelVal.y-w_uv.x,inputLuvPixelVal.z-w_uv.y);
+    inputLuvPixelVal.x=1+(-0.8660f*q+0.0872f*k_br)*s_uv;
+    inputLuvPixelVal.y=inputLuvPixelVal.z=inputLuvPixelVal.x;
+
+    return inputLuvPixelVal;
+}
+
+
+//main function
+__DEVICE__ float3 transform(int p_Width, int p_Height, int p_X, int p_Y, float p_R, float p_G, float p_B)
+{
+    float3 inPixelVal;
+    float3 xyzPixelVal;//CIE XYZ
+    float3 luvPixelVal;//CIE Lu'v'
+    float3 outPixelVal;
+    float3 ap0PixelVal;
+    float d;
+    float2 w_uv;
+
+    //low clamp
+    inPixelVal.x=p_R<0?0:p_R;
+    inPixelVal.y=p_G<0?0:p_G;
+    inPixelVal.z=p_B<0?0:p_B;
+
+    //no low clamp
+/*     inPixelVal.x=p_R;
+    inPixelVal.y=p_G;
+    inPixelVal.z=p_B; */
+
+    xyzPixelVal=matMulVec(mtxap0xyz,inPixelVal);
+
+    //CIE XYZ to CIE L*u'v'
+    luvPixelVal.x=xyzPixelVal.y>_e?116.0f*_powf(xyzPixelVal.y,1.0f/3.0f)-16.0f:xyzPixelVal.y*_k;
+    luvPixelVal.x=luvPixelVal.x/100.0f;
+    d=xyzPixelVal.x+15.0f*xyzPixelVal.y+3.0f*xyzPixelVal.z;
+    luvPixelVal.y=d==0.0f?0:4.0f*xyzPixelVal.x/d;
+    luvPixelVal.z=d==0.0f?0:9.0f*xyzPixelVal.y/d;
+
+    switch(algOpt)
+    {
+        case 0:
+        luvPixelVal=hkest_lumVAC(luvPixelVal,La);
+        break;
+
+        case 1:
+        luvPixelVal=hkest_lumVCC(luvPixelVal,La);
+        break;
+
+        case 2:
+        luvPixelVal=hkest_objVAC(luvPixelVal,La);
+        break;
+
+        case 3:
+        luvPixelVal=hkest_objVCC(luvPixelVal,La);
+        break;
+    }
+    
+
+//Input divided by L*u'v'
+    outPixelVal.x=inPixelVal.x/luvPixelVal.x<0?0:inPixelVal.x/luvPixelVal.x;
+    outPixelVal.y=inPixelVal.y/luvPixelVal.y<0?0:inPixelVal.y/luvPixelVal.y;
+    outPixelVal.z=inPixelVal.z/luvPixelVal.z<0?0:inPixelVal.z/luvPixelVal.z;
+
+    return outPixelVal;
+
+    
+}
